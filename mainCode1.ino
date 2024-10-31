@@ -58,8 +58,8 @@ void loop() {
   Serial
   Serial.print(mq7_ppm); // CO concentration in ppm
   Serial.print(" ");
-  Serial.println(mq135_ppm); // Air quality concentration in ppm
-  Serial.print(" ");
+  Serial.print(mq135_ppm); // Air quality concentration in ppm
+  Serial.println(" ");
   delay(100);
   }
 
