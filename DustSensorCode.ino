@@ -1,4 +1,4 @@
-int pin = 8;
+int pin = 23;
 unsigned long duration;
 unsigned long starttime;
 unsigned long sampletime_ms = 1000;
