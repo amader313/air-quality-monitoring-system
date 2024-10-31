@@ -45,7 +45,6 @@ void loop() {
     }
 
   Serial.println(concentration);
-  delay(100);
    
   // MQ7 (CO Sensor
   int mq7_raw = analogRead(mq7pin);
@@ -59,7 +58,8 @@ void loop() {
   Serial
   Serial.print(mq7_ppm); // CO concentration in ppm
   Serial.print(" ");
-  Serial.print(mq135_ppm); // Air quality concentration in ppm
+  Serial.println(mq135_ppm); // Air quality concentration in ppm
+  Serial.print(" ");
   delay(100);
   }
 
