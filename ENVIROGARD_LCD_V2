@@ -1,0 +1,266 @@
+#include <Wire.h>
+#include <DHT.h>                  // DHT Library for temperature and humidity
+#include <MQUnifiedsensor.h>      // MQ Sensor library
+#include <ThingerESP32.h>         // Thinger.io library
+#include <LiquidCrystal_I2C.h>
+
+// Initialize the LCD (I2C address 0x27; adjust if necessary)
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+// Thinger.io Credentials
+#define USERNAME "amader"
+#define DEVICE_ID "ESP32"
+#define DEVICE_CREDENTIAL "6KGJ169RZfh+DQB%"
+
+// Wi-Fi Credentials
+#define SSID "AMMAR6236_2.4GHZ" //Ray's V23 5G
+#define SSID_PASSWORD "AHMADRIFAIE6236" //ray030108
+
+// Sensor Pins and Configurations
+#define MQ5_PIN 4                 // MQ5 connected to pin 4
+#define MQ7_PIN 34                // MQ7 connected to pin 34
+#define MQ135_PIN 35              // MQ135 connected to pin 35
+#define MQ2_PIN 2                 // MQ2 connected to pin 2
+#define DHTPIN 19               // DHT22 sensor connected to pin 21
+#define DHTTYPE DHT22             // DHT22 type
+
+#define Voltage_Resolution 5      // ESP32 works at 5V supply
+#define ADC_Bit_Resolution 12     // ESP32 ADC resolution
+#define MQ5_R0 10.50              // Replace with the actual R0 value you get after first calibration
+#define RatioMQ2CleanAir 9.83     // RS/R0 ratio for clean air (MQ2)
+
+// Sensor Constants for MQ7 and MQ135
+const float A_mq7 = 19.95;        // Constants for CO (calibrated)
+const float B_mq7 = -0.65;
+const float A_mq135 = 3.92;       // Constants for Air Quality
+const float B_mq135 = -0.3;
+
+// Sensor Variables
+float mq7_ppm = 0.0;
+float mq135_ppm = 0.0;
+float pm2_5_approx = 0.0;         // Approximate PM2.5 value from MQ135
+float methane_ppm = 0.0;
+float lpg_ppm = 0.0;
+float smoke_ppm = 0.0;
+float h2_ppm = 0.0;
+float temperature = 0.0;
+float humidity = 0.0;
+
+// Thresholds for Alerts
+const float TEMP_THRESHOLD = 45.0;        // Max temperature in °C
+const float HUMIDITY_THRESHOLD = 30.0;    // Low humidity threshold
+const float CO_THRESHOLD = 250.0;         // CO concentration in PPM
+const float AIR_QUALITY_THRESHOLD = 1000.0;
+const float METHANE_THRESHOLD = 2.0;      // Methane PPM
+const float LPG_THRESHOLD = 2.0;          // LPG PPM
+const float SMOKE_THRESHOLD = 500.0;      // Smoke threshold in PPM
+const float DUST_THRESHOLD = 500.0; // DUST PPM
+
+
+// MQ5, MQ2, and DHT Sensor Objects
+MQUnifiedsensor MQ5("ESP32", Voltage_Resolution, ADC_Bit_Resolution, MQ5_PIN, "MQ-5");
+MQUnifiedsensor MQ2("ESP32", Voltage_Resolution, ADC_Bit_Resolution, MQ2_PIN, "MQ-2");
+MQUnifiedsensor MQ135("ESP32", Voltage_Resolution, ADC_Bit_Resolution, MQ135_PIN, "MQ-135"); // MQ135 Object
+DHT dht(DHTPIN, DHTTYPE);
+ThingerESP32 thing(USERNAME, DEVICE_ID, DEVICE_CREDENTIAL);
+
+// Function to Read MQ7 (CO Gas)
+void GET_MQ7() {
+  int mq7_raw = analogRead(MQ7_PIN);
+  mq7_ppm = A_mq7 * pow((float(mq7_raw) / 4095), B_mq7);
+}
+
+// Function to Read MQ135 (Air Quality / PM2.5 Approximation)
+void GET_MQ135() {
+  MQ135.update(); // Update sensor readings
+  float calcR0 = MQ135.calibrate(3.6);
+  Serial.print("Calibrated R0: ");
+  Serial.println(calcR0);
+
+  // Air quality constants
+  MQ135.setA(3.92);
+  MQ135.setB(-0.3);
+  
+  // Read raw value and calculate air quality PPM
+  int rawValue = analogRead(MQ135_PIN);
+  Serial.print("MQ135 Raw Value: ");
+  Serial.println(rawValue);
+  
+  // Calculate Air Quality in PPM
+  mq135_ppm = A_mq135 * pow((float(rawValue) / 4095), B_mq135);
+
+  // Approximate PM2.5 from air quality PPM (experimental factor)
+  pm2_5_approx = mq135_ppm * 0.5; // Adjust based on calibration
+  Serial.print("Converted PPM: ");
+  Serial.println(mq135_ppm);
+  Serial.print("PM2.5 Approx (ug/m³): ");
+  Serial.println(pm2_5_approx);
+}
+
+// Function to Read MQ5 (Methane and LPG)
+void GET_MQ5() {
+  MQ5.update(); // Ensure sensor data is updated
+  
+  MQ5.setA(177.65); MQ5.setB(-2.56); // Methane constants
+  methane_ppm = MQ5.readSensor();
+  
+  MQ5.setA(80.897); MQ5.setB(-2.431); // LPG constants
+  lpg_ppm = MQ5.readSensor();
+}
+
+// Function to Read MQ2 (Smoke and H2)
+void GET_MQ2() {
+  MQ2.update();
+
+  // Measure Smoke
+  MQ2.setA(1000.0); MQ2.setB(-2.3);
+  smoke_ppm = MQ2.readSensor();
+
+  // Measure Hydrogen (H2)
+  MQ2.setA(987.99); MQ2.setB(-2.162);
+  h2_ppm = MQ2.readSensor();
+}
+
+// Function to Read Temperature and Humidity
+void GET_DHT() {
+  temperature = dht.readTemperature();
+  humidity = dht.readHumidity();
+
+  if (isnan(temperature) || isnan(humidity)) {
+    Serial.println("Error: Failed to read from DHT sensor!");
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+   initWifi();
+   thing.add_wifi(SSID, SSID_PASSWORD);
+
+  // Initialize LCD
+  lcd.init(); // Correct initialization
+  lcd.begin(20, 4); // Initialize 20x4 LCD
+  lcd.backlight();  // Turn on the backlight
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
+  delay(2000);
+
+  // Initialize and calibrate MQ5
+  Serial.println("Calibrating MQ5... Please wait.");
+  float calcR0 = 0;
+
+  for (int i = 1; i <= 10; i++) {
+    MQ5.update();
+    calcR0 += MQ5.calibrate(6.5); // Clean air ratio RS/R0 = 6.5
+    delay(100);
+  }
+  calcR0 /= 10;
+  MQ5.setR0(calcR0);
+  Serial.print("MQ5 Calibration Complete! R0 Value: ");
+  Serial.println(MQ5.getR0());
+
+  // Initialize and calibrate MQ2
+  Serial.println("Calibrating MQ2... Please wait.");
+  calcR0 = 0;
+  for (int i = 1; i <= 10; i++) {
+    MQ2.update();
+    calcR0 += MQ2.calibrate(RatioMQ2CleanAir);
+    delay(100);
+  }
+  calcR0 /= 10;
+  MQ2.setR0(calcR0);
+  Serial.print("MQ2 Calibration Complete! R0 Value: ");
+  Serial.println(MQ2.getR0());
+
+  if (isinf(calcR0) || calcR0 == 0) {
+    Serial.println("Error: Calibration failed! Check wiring.");
+    while (1);
+  }
+
+  dht.begin(); // Initialize DHT sensor
+}
+
+void loop() {
+  // Update sensor readings
+  GET_MQ5();
+  GET_MQ7();
+  GET_MQ135();
+  GET_MQ2();
+  GET_DHT();
+
+  // Display Sensor Data on LCD
+  lcd.setCursor(0, 0); // Row 1
+  lcd.print("T: ");
+  lcd.print(temperature, 1); // Temperature with 1 decimal
+  lcd.print("C H: ");
+  lcd.print(humidity, 1); // Humidity with 1 decimal
+  lcd.print("% AQ: ");
+  lcd.print(mq135_ppm, 1); // Air Quality PPM
+
+  lcd.setCursor(0, 1); // Row 2
+  lcd.print("PM2.5: ");
+  lcd.print(pm2_5_approx, 1); // PM2.5 Approximation
+  lcd.print(" CH4: ");
+  lcd.print(methane_ppm, 1); // Methane PPM
+
+  lcd.setCursor(0, 2); // Row 3
+  lcd.print("CO: ");
+  lcd.print(mq7_ppm, 1); // CO PPM
+  lcd.print(" LPG: ");
+  lcd.print(lpg_ppm, 1); // LPG PPM
+
+  lcd.setCursor(0, 3); // Row 4
+  lcd.print("Smoke: ");
+  lcd.print(smoke_ppm, 1); // Smoke PPM
+  lcd.print(" H2: ");
+  lcd.print(h2_ppm, 1); // Hydrogen PPM
+
+  // Delay to ensure readings are updated periodically
+  delay(2000);
+}
+
+void checkAlerts() {
+    String temperature_status = (temperature >= TEMP_THRESHOLD) ? "(ALERT)" : "(OK)";
+    String humidity_status = (humidity <= HUMIDITY_THRESHOLD) ? "(ALERT)" : "(OK)";
+    String co_status = (mq7_ppm >= CO_THRESHOLD) ? "(ALERT)" : "(OK)";
+    String air_quality_status = (mq135_ppm >= AIR_QUALITY_THRESHOLD) ? "(ALERT)" : "(OK)";
+    String methane_status = (methane_ppm >= METHANE_THRESHOLD) ? "(ALERT)" : "(OK)";
+    String lpg_status = (lpg_ppm >= LPG_THRESHOLD) ? "(ALERT)" : "(OK)";
+    String smoke_status = (smoke_ppm >= SMOKE_THRESHOLD) ? "(ALERT)" : "(OK)";
+    String dust_status = (pm2_5_approx >= DUST_THRESHOLD) ? "(ALERT)" : "(OK)";
+
+    // Determine conclusion
+    String conclusion = "All sensor readings are normal.";
+    if (temperature_status == "(ALERT)" || humidity_status == "(ALERT)" || 
+        co_status == "(ALERT)" || air_quality_status == "(ALERT)" || 
+        methane_status == "(ALERT)" || lpg_status == "(ALERT)" || 
+        smoke_status == "(ALERT)" || dust_status == "(ALERT)") {
+        conclusion = "Some sensor readings are abnormal. Please investigate!";
+    }
+
+    // Create a pson object to hold the data
+    pson out;
+    out["temperature"] = temperature;
+    out["temperature_status"] = temperature_status;
+    out["humidity"] = humidity;
+    out["humidity_status"] = humidity_status;
+    out["co_ppm"] = mq7_ppm;
+    out["co_status"] = co_status;
+    out["air_quality_ppm"] = mq135_ppm;
+    out["air_quality_status"] = air_quality_status;
+    out["methane_ppm"] = methane_ppm;
+    out["methane_status"] = methane_status;
+    out["lpg_ppm"] = lpg_ppm;
+    out["lpg_status"] = lpg_status;
+    out["smoke_ppm"] = smoke_ppm;
+    out["smoke_status"] = smoke_status;
+    out["pm2_5_approx"] = pm2_5_approx;
+    out["dust_status"] = dust_status;
+    out["conclusion"] = conclusion;
+
+    // Call the Thinger.io endpoint with the populated data
+    if (thing.call_endpoint("sensor_alert", out)) {
+        Serial.println("Email Alert Sent!");
+    } else {
+        Serial.println("Failed to send email alert!");
+    }
+}
