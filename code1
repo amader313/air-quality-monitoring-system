@@ -17,10 +17,10 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 #define SSID_PASSWORD "ray030108"
 
 // Sensor Pins and Configurations
-#define MQ5_PIN 4                 // MQ5 connected to pin 4
+#define MQ5_PIN 33                 // MQ5 connected to pin 33
 #define MQ7_PIN 34                // MQ7 connected to pin 34
 #define MQ135_PIN 35              // MQ135 connected to pin 35
-#define MQ2_PIN 2                 // MQ2 connected to pin 2
+#define MQ2_PIN 32                 // MQ2 connected to pin 32
 #define DHTPIN 19               // DHT22 sensor connected to pin 21
 #define DHTTYPE DHT22             // DHT22 type
 
