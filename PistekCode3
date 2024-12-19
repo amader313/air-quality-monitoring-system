@@ -17,7 +17,7 @@
 #define MQ7_PIN 34                // MQ7 connected to pin 34
 #define MQ135_PIN 35              // MQ135 connected to pin 35
 #define MQ2_PIN 2                 // MQ2 connected to pin 2
-#define DHTPIN 15                 // DHT22 sensor connected to pin 15
+#define DHTPIN 19                // DHT22 sensor connected to pin 19
 #define DHTTYPE DHT22             // DHT22 type
 
 #define Voltage_Resolution 5      // ESP32 works at 5V supply
